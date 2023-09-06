@@ -1,0 +1,178 @@
+---
+title: "5234 project"
+author: "Yiran Su"
+date: "2023-04-11"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyverse)
+library(purrr)
+```
+
+#Import dataset
+```{r}
+ipums<- read.csv('/Users/susu/Desktop/final projects/5234/ipums.csv')
+dim(ipums); head(ipums)
+```
+
+
+
+#PART ONE: CLUSTER SAMPLING
+#(1A) Generate a frequency table of the number of persons within each psu.
+```{r}
+freq <- table(ipums$psu)
+freq
+sum(freq)
+```
+
+#(1B) Take a two-stage cluster sample of size 200
+```{r}
+set.seed(1234)
+n=10; (N=nrow(freq))
+(sample <- sample(1:N, n,replace = FALSE))
+psu_sample <- ipums[ipums$psu %in% sample,]
+
+M0<-nrow(psu_sample)
+
+#data is the column of nested data frames for each PSUs in ssu_sample.
+#sample_n is the function that is applied to each nested data frame in data to sample mi observations without replacement.
+
+ssu_sample <- psu_sample%>%
+  group_by(psu)%>%
+  nest()%>%
+ mutate(Mi	=	map_dbl(data,	nrow),
+        pi = Mi / M0,
+        mi= round(200*pi))%>%
+  mutate(second_stage= map2(data, mi, sample_n, replace = FALSE))%>%
+  select(-data) %>%
+  unnest(second_stage)
+
+nrow(ssu_sample)
+
+```
+
+
+#(1C)estimate the population mean and total of ‘inctot’ and give the standard errors of your estimates
+```{r}
+n=10; N=nrow(freq)
+(ybar.i=aggregate(inctot~psu,ssu_sample,mean)$inctot)
+
+(t.i=aggregate(inctot~psu,ssu_sample,sum)$inctot)
+(M.i=aggregate(Mi~psu,ssu_sample,mean)$Mi)
+s.i2=aggregate(inctot~psu,ssu_sample,sum)$inctot
+(that.i=M.i*ybar.i)
+(that.unb=N/n*sum(that.i))#estimated population total
+s.t2=sum((that.i-that.unb/N)^2)/(n-1)
+(se.t.hat.unb=sqrt(N/n*sum((1-n/M.i)*(s.i2/n)*M.i^2)+ N^2*(1-n/N)*s.t2/n))#standard error of population total income estimator
+
+
+(ybar.hat.r=sum(that.i)/sum(M.i)) #estimated population mean
+s.r2=sum((that.i-M.i*ybar.hat.r)^2)/(n-1)
+Mbar=sum(M.i)/n
+b=sum((1-n/M.i)*M.i^2*s.i2/n)
+var.ybar.hat.r=1/Mbar^2*((1-n/N)*s.r2/n+1/N*b/n)
+(se.ybar.hat.r= sqrt(var.ybar.hat.r)) #standard error of population average income estimator 
+```
+
+#(1D) Select an unequal-probability sample of 10 psus, with probability proportional to number of persons within each psu, and then take a subsample (SRS) of 20 persons in each of the selected psus. 
+
+
+```{r}
+set.seed(1)
+psaii=freq/sum(freq)
+(unequal_sample<- sample(1:90,10,replace= FALSE,prob=psaii))
+unequal_psu_sample <- ipums[ipums$psu %in% unequal_sample,]
+
+M0<-nrow(psu_sample)
+
+#data is the column of nested data frames for each PSUs in ssu_sample.
+#sample_n is the function that is applied to each nested data frame in data to sample mi observations without replacement.
+
+unequal_ssu_sample <- unequal_psu_sample%>%
+  group_by(psu)%>%
+  nest()%>%
+ mutate(Mi	=	map_dbl(data,	nrow),
+        pi = Mi / M0,
+        mi= round(200*pi))%>%
+  mutate(second_stage= map2(data, mi, sample_n, replace = FALSE))%>%
+  select(-data) %>%
+  unnest(second_stage)
+
+nrow(unequal_ssu_sample)
+```
+
+
+#(E) Estimate the population mean and total of “inctot” with se
+```{r}
+n=10; N=nrow(freq)
+(ybar.i.unequal=aggregate(inctot~psu,unequal_ssu_sample,mean)$inctot)
+
+(t.i.unequal=aggregate(inctot~psu,unequal_ssu_sample,sum)$inctot)
+(M.i.unequal=aggregate(Mi~psu,unequal_ssu_sample,mean)$Mi)
+s.i2.unequal=aggregate(inctot~psu,unequal_ssu_sample,sum)$inctot
+(that.i.unequal=M.i.unequal*ybar.i.unequal)
+(that.unb.unequal=N/n*sum(that.i.unequal))#estimated population total
+s.t2.unequal=sum((that.i.unequal-that.unb.unequal/N)^2)/(n-1)
+(se.t.hat.unb.unequal=sqrt(N/n*sum((1-n/M.i.unequal)*(s.i2.unequal/n)*M.i.unequal^2)+ N^2*(1-n/N)*s.t2.unequal/n))#standard error of population total income estimator
+
+
+(ybar.hat.r.unequal=sum(that.i.unequal)/sum(M.i.unequal)) #estimated population mean
+s.r2.unequal=sum((that.i.unequal-M.i.unequal*ybar.hat.r.unequal)^2)/(n-1)
+Mbar.unequal=sum(M.i.unequal)/n
+b.unequal=sum((1-n/M.i.unequal)*M.i.unequal^2*s.i2.unequal/n)
+var.ybar.hat.r.unequal=1/Mbar.unequal^2*((1-n/N)*s.r2.unequal/n+1/N*b.unequal/n)
+(se.ybar.hat.r.unequal= sqrt(var.ybar.hat.r.unequal)) #standard error of population average income estimator 
+
+```
+
+
+
+#PART TWO: COMPLEX SAMPLING
+#(2A) Select a two-stage stratified cluster sample as follows: first select two psus from each stratum, with probability proportional to size, and then take a simple random sample of 50 persons from each selected psu. 
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(survey)
+
+
+
+```
+
+
+```{r}
+```
+
+
+#(2B) Construct the column of sampling weights for your sample.
+```{r}
+
+```
+
+
+#(2C) Draw a histogram of ‘inctot’ for your sample that incorporates weights.
+```{r}
+
+```
+
+#(2D) Draw two of the scatterplots that incorporate weights for 𝑦𝑦 variable ‘inctot’ and 𝑥𝑥 variable ‘age’. How do these differ from scatterplots that do not use the weights?
+```{r}
+
+```
+
+#(2F) Create a categorical variable catinc from ‘inctot’ with two categories: low income and high income, using the median income as the dividing point for the categories.
+```{r}
+
+```
+
+
+#(2G) Using your sample, conduct a hypothesis test to explore whether ‘catinc’ is associated with ‘race’. What method did you use to account for the complex sampling design?
+```{r}
+
+```
+
